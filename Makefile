@@ -2,11 +2,12 @@
 # go-api-template — Makefile
 # ==============================================================================
 
-APP = ./cmd/main.go
-BIN = ./bin/api
-GO  = /usr/local/go/bin/go
+APP    = ./cmd/main.go
+BIN    = ./bin/api
+GO     = /usr/local/go/bin/go
+SWAG   = /home/d4nilo/go/bin/swag
 
-.PHONY: help run build test test-race tidy lint clean air docker-up docker-down
+.PHONY: help run build swagger test test-race tidy lint clean air docker-up docker-down
 
 ## help: muestra los targets disponibles
 help:
@@ -15,15 +16,20 @@ help:
 	@grep -E '^## [a-zA-Z_-]+:' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {sub(/^## /, ""); printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-## run: ejecuta la aplicación directamente con go run
+## run: ejecuta la aplicación (requiere docs/ generados, corre make swagger primero)
 run:
 	$(GO) run $(APP)
 
-## build: compila el binario en ./bin/api (requiere gcc para CGO/SQLite)
+## build: compila el binario en ./bin/api
 build:
 	@mkdir -p ./bin
 	CGO_ENABLED=1 $(GO) build -ldflags="-s -w" -o $(BIN) $(APP)
 	@echo "Binario compilado en $(BIN)"
+
+## swagger: genera/actualiza la documentación OpenAPI en docs/
+swagger:
+	$(SWAG) init -g cmd/main.go --output docs/ --parseDependency --parseInternal
+	@echo "Docs generados en docs/  →  http://localhost:8080/docs/index.html"
 
 ## test: ejecuta todos los tests con cobertura
 test:

@@ -1,3 +1,22 @@
+// Package main is the entry point for go-api-template.
+//
+//	@title			go-api-template
+//	@version		1.0
+//	@description	Boilerplate de API REST en Go con Gin, GORM, JWT y rate limiting.
+//
+//	@contact.name	Soporte API
+//	@contact.email	support@example.com
+//
+//	@license.name	MIT
+//	@license.url	https://opensource.org/licenses/MIT
+//
+//	@host		localhost:8080
+//	@BasePath	/
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Escribe "Bearer " seguido de tu access token JWT.
 package main
 
 import (

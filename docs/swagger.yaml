@@ -1,0 +1,316 @@
+basePath: /
+definitions:
+  go-api-template_internal_services.LoginInput:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  go-api-template_internal_services.RegisterInput:
+    properties:
+      email:
+        type: string
+      name:
+        minLength: 2
+        type: string
+      password:
+        minLength: 6
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
+  go-api-template_internal_services.TokenPair:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+    type: object
+  go-api-template_internal_utils.APIError:
+    properties:
+      code:
+        type: string
+      details: {}
+      message:
+        type: string
+    type: object
+  go-api-template_internal_utils.Response:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/go-api-template_internal_utils.APIError'
+      request_id:
+        type: string
+      success:
+        type: boolean
+    type: object
+  internal_handlers.HealthData:
+    properties:
+      env:
+        example: development
+        type: string
+      status:
+        example: ok
+        type: string
+    type: object
+  internal_handlers.LogoutRequest:
+    properties:
+      refresh_token:
+        example: d4f...3e
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_handlers.RegisterData:
+    properties:
+      user_id:
+        example: 1
+        type: integer
+    type: object
+  internal_handlers.TokenRefreshRequest:
+    properties:
+      refresh_token:
+        example: d4f...3e
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_handlers.UserData:
+    properties:
+      email:
+        example: jane@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+      name:
+        example: Jane Doe
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: Soporte API
+  description: Boilerplate de API REST en Go con Gin, GORM, JWT y rate limiting.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: go-api-template
+  version: "1.0"
+paths:
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Autentica al usuario y devuelve un par de tokens JWT (access +
+        refresh)
+      parameters:
+      - description: Credenciales
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/go-api-template_internal_services.LoginInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tokens generados
+          schema:
+            allOf:
+            - $ref: '#/definitions/go-api-template_internal_utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/go-api-template_internal_services.TokenPair'
+              type: object
+        "400":
+          description: Datos inválidos
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "401":
+          description: Credenciales incorrectas
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+      summary: Iniciar sesión
+      tags:
+      - auth
+  /api/v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revoca el refresh token para invalidar la sesión
+      parameters:
+      - description: Refresh token a revocar
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.LogoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sesión cerrada
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "400":
+          description: Datos inválidos
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "500":
+          description: Error interno
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+      summary: Cerrar sesión
+      tags:
+      - auth
+  /api/v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Rota el refresh token y devuelve un nuevo par de tokens JWT
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.TokenRefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tokens renovados
+          schema:
+            allOf:
+            - $ref: '#/definitions/go-api-template_internal_utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/go-api-template_internal_services.TokenPair'
+              type: object
+        "400":
+          description: Datos inválidos
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "401":
+          description: Token inválido o expirado
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+      summary: Renovar tokens
+      tags:
+      - auth
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Crea una nueva cuenta de usuario con nombre, email y contraseña
+      parameters:
+      - description: Datos de registro
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/go-api-template_internal_services.RegisterInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Usuario registrado
+          schema:
+            allOf:
+            - $ref: '#/definitions/go-api-template_internal_utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_handlers.RegisterData'
+              type: object
+        "400":
+          description: Datos inválidos
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "409":
+          description: Email ya registrado
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+      summary: Registrar usuario
+      tags:
+      - auth
+  /api/v1/users/me:
+    get:
+      description: Devuelve los datos del usuario asociado al token JWT
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Datos del usuario
+          schema:
+            allOf:
+            - $ref: '#/definitions/go-api-template_internal_utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_handlers.UserData'
+              type: object
+        "401":
+          description: No autenticado
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "404":
+          description: Usuario no encontrado
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/go-api-template_internal_utils.Response'
+      security:
+      - BearerAuth: []
+      summary: Perfil del usuario autenticado
+      tags:
+      - usuarios
+  /health:
+    get:
+      description: Devuelve el estado del servidor y el entorno de ejecución
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Servidor operativo
+          schema:
+            allOf:
+            - $ref: '#/definitions/go-api-template_internal_utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_handlers.HealthData'
+              type: object
+      summary: Health check
+      tags:
+      - sistema
+securityDefinitions:
+  BearerAuth:
+    description: Escribe "Bearer " seguido de tu access token JWT.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

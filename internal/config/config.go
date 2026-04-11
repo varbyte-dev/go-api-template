@@ -21,6 +21,7 @@ type Config struct {
 	CORSOrigins        []string
 	LogLevel           string
 	RateLimitEnabled   bool
+	SwaggerEnabled     bool
 }
 
 var App *Config
@@ -61,6 +62,7 @@ func Load() {
 		CORSOrigins:        corsOrigins,
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
 		RateLimitEnabled:   getEnvBool("RATE_LIMIT_ENABLED", true),
+		SwaggerEnabled:     getEnvBool("SWAGGER_ENABLED", true),
 	}
 
 	// Configure global slog
