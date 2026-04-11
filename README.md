@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat)
 
-Boilerplate de producción para construir APIs REST en Go. Incluye autenticación JWT, ORM con GORM, middlewares esenciales, respuestas estandarizadas, hot-reload y Docker listo para desplegar.
+Boilerplate de producción para construir APIs REST en Go. Incluye autenticación JWT, ORM con GORM, rate limiting, documentación OpenAPI interactiva, respuestas estandarizadas, hot-reload y Docker listo para desplegar.
 
 ---
 
@@ -14,6 +14,8 @@ Boilerplate de producción para construir APIs REST en Go. Incluye autenticació
 - 🗄️ **ORM con GORM + SQLite** — Fácil de cambiar a PostgreSQL o MySQL
 - 🌐 **Gin Framework** — Con middlewares de CORS, Logger, RequestID y Recovery
 - 📦 **Respuestas JSON estandarizadas** — Estructura `{success, data, error, request_id}` consistente
+- 🚦 **Rate limiting por IP y global** — Token-bucket con protección anti brute-force en endpoints de auth; headers `X-Ratelimit-*` y `Retry-After` en cada respuesta
+- 📚 **Swagger UI interactivo** — Documentación OpenAPI auto-generada desde anotaciones en el código; disponible en `/docs/index.html`
 - 📄 **Paginación genérica** — Helpers de GORM listos para usar en cualquier recurso
 - ⚡ **Hot-reload con Air** — Recarga automática en desarrollo al guardar cambios
 - 🐳 **Docker + Docker Compose** — Multi-stage build optimizado para producción
@@ -45,13 +47,13 @@ cd go-api-template
 cp .env.example .env
 
 # 3. Editar .env con tus valores (opcional para desarrollo local)
-# APP_PORT, JWT_SECRET, etc.
 
 # 4. Instalar dependencias y ejecutar
 make run
 ```
 
-La API estará disponible en `http://localhost:8080`.
+La API estará disponible en `http://localhost:8080`.  
+La documentación interactiva estará en `http://localhost:8080/docs/index.html`.
 
 ---
 
@@ -69,8 +71,10 @@ Copia `.env.example` a `.env` y ajusta los valores según tu entorno.
 | `JWT_REFRESH_EXPIRY` | Duración del refresh token | `168h` |
 | `CORS_ORIGINS` | Orígenes permitidos (separados por coma o `*`) | `*` |
 | `LOG_LEVEL` | Nivel de log (`debug` \| `info` \| `warn` \| `error`) | `info` |
+| `RATE_LIMIT_ENABLED` | Activa el rate limiting global y por IP | `true` |
+| `SWAGGER_ENABLED` | Sirve la UI de Swagger en `/docs/index.html` | `true` |
 
-> ⚠️ **Importante:** Cambia `JWT_SECRET` por un valor seguro y aleatorio antes de ir a producción.
+> ⚠️ **Importante:** Cambia `JWT_SECRET` por un valor seguro en producción. Considera poner `SWAGGER_ENABLED=false` en producción para no exponer la documentación.
 
 ---
 
@@ -79,7 +83,11 @@ Copia `.env.example` a `.env` y ajusta los valores según tu entorno.
 ```
 go-api-template/
 ├── cmd/
-│   └── main.go                  # Punto de entrada: inicializa config, DB, router y servidor
+│   └── main.go                  # Punto de entrada con graceful shutdown
+├── docs/                        # Spec OpenAPI generada (make swagger)
+│   ├── docs.go                  # Spec embebida en el binario
+│   ├── swagger.json             # Spec en JSON
+│   └── swagger.yaml             # Spec en YAML
 ├── internal/
 │   ├── config/
 │   │   └── config.go            # Carga y valida variables de entorno
@@ -87,22 +95,24 @@ go-api-template/
 │   │   └── database.go          # Conexión a SQLite y auto-migración de modelos
 │   ├── handlers/
 │   │   ├── auth_handler.go      # Handlers de registro, login, refresh y logout
-│   │   ├── user_handler.go      # Handler de perfil del usuario autenticado
-│   │   └── health_handler.go    # Health check del servicio
+│   │   ├── health_handler.go    # Health check del servicio
+│   │   ├── swagger_types.go     # Tipos nombrados para schemas de la documentación
+│   │   └── user_handler.go      # Handler del perfil del usuario autenticado
 │   ├── middleware/
-│   │   ├── auth.go              # Middleware de validación de JWT
-│   │   ├── cors.go              # Middleware de CORS configurable
-│   │   ├── logger.go            # Middleware de logging de requests
-│   │   └── request_id.go        # Middleware que inyecta un UUID por request
+│   │   ├── auth.go              # Valida el JWT en el header Authorization
+│   │   ├── cors.go              # CORS configurable vía CORS_ORIGINS
+│   │   ├── logger.go            # Log estructurado JSON de cada request (slog)
+│   │   ├── ratelimit.go         # Rate limiting global y por IP (token-bucket)
+│   │   └── request_id.go        # Inyecta un UUID por request (X-Request-ID)
 │   ├── models/
-│   │   └── user.go              # Modelo de usuario para GORM
+│   │   └── user.go              # Modelos User y RefreshToken para GORM
 │   ├── router/
-│   │   └── router.go            # Registro de rutas y grupos de la API
+│   │   └── router.go            # Registro de rutas, grupos y middlewares
 │   ├── services/
 │   │   └── auth_service.go      # Lógica de negocio de autenticación
 │   └── utils/
-│       ├── response.go          # Helpers para respuestas JSON estandarizadas
-│       └── pagination.go        # Helper genérico de paginación con GORM
+│       ├── pagination.go        # Helper genérico de paginación con GORM
+│       └── response.go          # Helpers para respuestas JSON estandarizadas
 ├── bin/                         # Binario compilado (generado, en .gitignore)
 ├── .air.toml                    # Configuración de hot-reload para Air
 ├── .env                         # Variables de entorno locales (en .gitignore)
@@ -122,29 +132,48 @@ go-api-template/
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| `GET` | `/health` | ❌ Público | Verifica que el servicio está en línea |
+| `GET` | `/health` | ❌ Público | Estado del servicio |
+| `GET` | `/docs/*` | ❌ Público | Swagger UI (desactivar en producción) |
 | `POST` | `/api/v1/auth/register` | ❌ Público | Registra un nuevo usuario |
 | `POST` | `/api/v1/auth/login` | ❌ Público | Inicia sesión y devuelve tokens JWT |
-| `POST` | `/api/v1/auth/refresh` | ❌ Público | Renueva el access token usando el refresh token |
+| `POST` | `/api/v1/auth/refresh` | ❌ Público | Renueva el access token con el refresh token |
 | `POST` | `/api/v1/auth/logout` | ❌ Público | Invalida el refresh token |
-| `GET` | `/api/v1/users/me` | ✅ Bearer token | Devuelve el perfil del usuario autenticado |
+| `GET` | `/api/v1/users/me` | ✅ Bearer token | Perfil del usuario autenticado |
+
+---
+
+## Rate limiting
+
+Cada respuesta incluye headers informativos sobre el estado del límite:
+
+| Header | Descripción |
+|---|---|
+| `X-Ratelimit-Limit` | Tasa configurada en req/s para ese endpoint |
+| `X-Ratelimit-Remaining` | Tokens disponibles para esa IP en este momento |
+| `Retry-After` | Segundos a esperar antes de reintentar (solo en 429) |
+
+Las tres capas de límite configuradas en `router.go`:
+
+| Capa | Aplica a | Límite | Burst |
+|---|---|---|---|
+| Global | Todo el servidor | 500 req/s | 1000 |
+| Auth por IP | `/api/v1/auth/*` | 10 req/min | 5 |
+| API por IP | `/api/v1/*` (protegido) | 60 req/s | 120 |
+
+Desactiva temporalmente con `RATE_LIMIT_ENABLED=false` (útil en tests).
 
 ---
 
 ## Formato de respuesta
 
-Todas las respuestas siguen la misma estructura JSON para facilitar el manejo en el cliente.
+Todas las respuestas siguen la misma estructura JSON.
 
 ### Éxito
 
 ```json
 {
   "success": true,
-  "data": {
-    "id": 1,
-    "email": "usuario@ejemplo.com",
-    "name": "Juan Pérez"
-  },
+  "data": { "id": 1, "name": "Juan Pérez", "email": "juan@ejemplo.com" },
   "request_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
@@ -181,6 +210,26 @@ Todas las respuestas siguen la misma estructura JSON para facilitar el manejo en
 }
 ```
 
+Los códigos de error posibles: `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `TOO_MANY_REQUESTS`, `INTERNAL_ERROR`.
+
+---
+
+## Documentación Swagger
+
+La documentación OpenAPI se genera automáticamente a partir de las anotaciones en los handlers.
+
+```bash
+# Instalar el CLI de swag (solo la primera vez)
+go install github.com/swaggo/swag/cmd/swag@v1.8.12
+
+# Regenerar docs después de modificar handlers
+make swagger
+```
+
+La UI interactiva queda disponible en `http://localhost:8080/docs/index.html`. Para probar endpoints protegidos, haz click en **Authorize** e ingresa tu access token con el formato `Bearer <token>`.
+
+> Recomendación: usa `SWAGGER_ENABLED=false` en producción para no exponer la documentación de tu API.
+
 ---
 
 ## Agregar un nuevo recurso
@@ -188,8 +237,6 @@ Todas las respuestas siguen la misma estructura JSON para facilitar el manejo en
 A continuación se muestra cómo agregar un recurso `Post` de forma consistente con la arquitectura del proyecto.
 
 ### 1. Crear el modelo
-
-Crea `internal/models/post.go`:
 
 ```go
 // internal/models/post.go
@@ -199,109 +246,138 @@ import "gorm.io/gorm"
 
 type Post struct {
     gorm.Model
-    Title   string `json:"title"   gorm:"not null"`
-    Content string `json:"content"`
-    UserID  uint   `json:"user_id" gorm:"not null"`
+    Title   string `gorm:"not null"`
+    Content string
+    UserID  uint   `gorm:"not null;index"`
 }
 ```
 
 ### 2. Registrar la migración
 
-En `internal/database/database.go`, agrega el modelo al auto-migrate:
+En `internal/database/database.go`, agrega el modelo al bloque de auto-migrate:
 
 ```go
-// Dentro de la función de migración
-db.AutoMigrate(&models.User{}, &models.Post{})
+func migrate() {
+    DB.AutoMigrate(
+        &models.User{},
+        &models.RefreshToken{},
+        &models.Post{},   // <-- añadir aquí
+    )
+}
 ```
 
 ### 3. Crear el servicio
-
-Crea `internal/services/post_service.go` con la lógica de negocio:
 
 ```go
 // internal/services/post_service.go
 package services
 
 import (
+    "go-api-template/internal/database"
     "go-api-template/internal/models"
-    "gorm.io/gorm"
+    "go-api-template/internal/utils"
 )
 
-type PostService struct {
-    db *gorm.DB
+type CreatePostInput struct {
+    Title   string `json:"title"   binding:"required,min=3"`
+    Content string `json:"content"`
 }
 
-func NewPostService(db *gorm.DB) *PostService {
-    return &PostService{db: db}
+func CreatePost(userID uint, input CreatePostInput) (*models.Post, error) {
+    post := &models.Post{
+        Title:   input.Title,
+        Content: input.Content,
+        UserID:  userID,
+    }
+    return post, database.DB.Create(post).Error
 }
 
-func (s *PostService) GetAll(page, perPage int) ([]models.Post, int64, error) {
+func GetPosts(params utils.PageParams) ([]models.Post, int64, error) {
     var posts []models.Post
     var total int64
-    s.db.Model(&models.Post{}).Count(&total)
-    s.db.Offset((page - 1) * perPage).Limit(perPage).Find(&posts)
+    database.DB.Model(&models.Post{}).Count(&total)
+    database.DB.Scopes(utils.Paginate(params)).Find(&posts)
     return posts, total, nil
-}
-
-func (s *PostService) Create(post *models.Post) error {
-    return s.db.Create(post).Error
 }
 ```
 
 ### 4. Crear el handler
-
-Crea `internal/handlers/post_handler.go`:
 
 ```go
 // internal/handlers/post_handler.go
 package handlers
 
 import (
-    "net/http"
     "go-api-template/internal/services"
     "go-api-template/internal/utils"
+
     "github.com/gin-gonic/gin"
 )
 
-type PostHandler struct {
-    postService *services.PostService
-}
-
-func NewPostHandler(postService *services.PostService) *PostHandler {
-    return &PostHandler{postService: postService}
-}
-
-func (h *PostHandler) GetAll(c *gin.Context) {
-    posts, total, err := h.postService.GetAll(1, 20)
+// GetPosts godoc
+//
+//	@Summary		Listar posts
+//	@Tags			posts
+//	@Produce		json
+//	@Param			page      query  int  false  "Página"     default(1)
+//	@Param			per_page  query  int  false  "Por página" default(20)
+//	@Success		200  {object}  utils.PaginatedResponse
+//	@Security		BearerAuth
+//	@Router			/api/v1/posts [get]
+func GetPosts(c *gin.Context) {
+    params := utils.ParsePageParams(c)
+    posts, total, err := services.GetPosts(params)
     if err != nil {
-        utils.ErrorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+        utils.InternalError(c, "could not retrieve posts")
         return
     }
-    utils.PaginatedResponse(c, posts, total, 1, 20)
+    utils.Paginated(c, posts, utils.NewMeta(params, total))
+}
+
+// CreatePost godoc
+//
+//	@Summary		Crear post
+//	@Tags			posts
+//	@Accept			json
+//	@Produce		json
+//	@Param			request  body  services.CreatePostInput  true  "Datos del post"
+//	@Success		201  {object}  utils.Response
+//	@Security		BearerAuth
+//	@Router			/api/v1/posts [post]
+func CreatePost(c *gin.Context) {
+    var input services.CreatePostInput
+    if err := c.ShouldBindJSON(&input); err != nil {
+        utils.BadRequest(c, err.Error())
+        return
+    }
+    userID := c.MustGet("user_id").(uint)
+    post, err := services.CreatePost(userID, input)
+    if err != nil {
+        utils.InternalError(c, "could not create post")
+        return
+    }
+    utils.Created(c, post)
 }
 ```
 
 ### 5. Registrar las rutas
 
-En `internal/router/router.go`, inyecta el handler y registra las rutas:
+En `internal/router/router.go`, dentro del grupo `protected`:
 
 ```go
-postService := services.NewPostService(db)
-postHandler := handlers.NewPostHandler(postService)
+protected.GET("/posts",  handlers.GetPosts)
+protected.POST("/posts", handlers.CreatePost)
+```
 
-// Dentro del grupo /api/v1 protegido
-posts := api.Group("/posts")
-posts.Use(middleware.AuthMiddleware(cfg))
-{
-    posts.GET("", postHandler.GetAll)
-}
+### 6. Regenerar la documentación
+
+```bash
+make swagger
 ```
 
 ---
 
 ## Docker
-
-El proyecto incluye un `Dockerfile` con multi-stage build para generar una imagen mínima y segura, y un `docker-compose.yml` listo para levantar el servicio.
 
 ```bash
 # Levantar el servicio con Docker Compose
@@ -322,6 +398,7 @@ La base de datos SQLite persiste en el volumen `./data/data.db` en tu máquina h
 | `make help` | Lista todos los comandos disponibles |
 | `make run` | Ejecuta la app directamente con `go run` |
 | `make build` | Compila el binario en `./bin/api` |
+| `make swagger` | Genera/actualiza la documentación OpenAPI en `docs/` |
 | `make test` | Ejecuta todos los tests con cobertura |
 | `make test-race` | Ejecuta tests con detección de race conditions |
 | `make tidy` | Ejecuta `go mod tidy` |
@@ -337,8 +414,11 @@ La base de datos SQLite persiste en el volumen `./data/data.db` en tu máquina h
 # Air (hot-reload)
 go install github.com/air-verse/air@latest
 
+# swag CLI (generación de docs Swagger)
+go install github.com/swaggo/swag/cmd/swag@v1.8.12
+
 # golangci-lint
-curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ```
 
 ---
