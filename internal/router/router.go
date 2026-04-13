@@ -30,8 +30,8 @@ func Setup(r *gin.Engine) {
 
 	// ── Documentación Swagger UI ─────────────────────────────────────────────
 	// Accesible en: GET /docs/index.html
-	// Desactivar en producción con SWAGGER_ENABLED=false
-	if config.App.SwaggerEnabled {
+	// Solo habilitado si SWAGGER_ENABLED=true y NO en producción
+	if config.App.SwaggerEnabled && config.App.AppEnv != "production" {
 		r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
 

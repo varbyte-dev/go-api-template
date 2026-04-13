@@ -54,8 +54,17 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("Server starting", "addr", addr, "env", config.App.AppEnv)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Info("Server starting", "addr", addr, "env", config.App.AppEnv, "tls", config.App.TLSEnabled)
+		var err error
+		if config.App.TLSEnabled {
+			err = srv.ListenAndServeTLS(config.App.TLSCertFile, config.App.TLSKeyFile)
+		} else {
+			if config.App.AppEnv == "production" {
+				slog.Warn("Running in production WITHOUT TLS! Set TLS_ENABLED=true for secure connections")
+			}
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			slog.Error("Server error", "err", err)
 			os.Exit(1)
 		}
