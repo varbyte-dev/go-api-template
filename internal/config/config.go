@@ -22,6 +22,9 @@ type Config struct {
 	LogLevel           string
 	RateLimitEnabled   bool
 	SwaggerEnabled     bool
+	TLSEnabled         bool
+	TLSCertFile        string
+	TLSKeyFile         string
 }
 
 var App *Config
@@ -41,7 +44,7 @@ func Load() {
 	}
 
 	// Parse CORS origins from comma-separated env var
-	corsRaw := getEnv("CORS_ORIGINS", "*")
+	corsRaw := getEnv("CORS_ORIGINS", "")
 	var corsOrigins []string
 	for _, o := range strings.Split(corsRaw, ",") {
 		if trimmed := strings.TrimSpace(o); trimmed != "" {
@@ -49,20 +52,40 @@ func Load() {
 		}
 	}
 	if len(corsOrigins) == 0 {
+		log.Println("WARNING: CORS_ORIGINS not set. Defaulting to allowing all origins (not recommended for production)")
 		corsOrigins = []string{"*"}
+	}
+
+	tlsEnabled := getEnvBool("TLS_ENABLED", false)
+	tlsCertFile := getEnv("TLS_CERT_FILE", "")
+	tlsKeyFile := getEnv("TLS_KEY_FILE", "")
+
+	if tlsEnabled && (tlsCertFile == "" || tlsKeyFile == "") {
+		log.Fatal("TLS_ENABLED requires TLS_CERT_FILE and TLS_KEY_FILE to be set")
+	}
+
+	jwtSecret := getEnv("JWT_SECRET", "")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is required. Set it in environment variables or .env file")
+	}
+	if len(jwtSecret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters long for secure signing")
 	}
 
 	App = &Config{
 		AppPort:            getEnv("APP_PORT", "8080"),
 		AppEnv:             getEnv("APP_ENV", "development"),
 		DBPath:             getEnv("DB_PATH", "./data.db"),
-		JWTSecret:          getEnv("JWT_SECRET", "change_me"),
+		JWTSecret:          jwtSecret,
 		AccessTokenExpiry:  accessExpiry,
 		RefreshTokenExpiry: refreshExpiry,
 		CORSOrigins:        corsOrigins,
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
 		RateLimitEnabled:   getEnvBool("RATE_LIMIT_ENABLED", true),
-		SwaggerEnabled:     getEnvBool("SWAGGER_ENABLED", true),
+		SwaggerEnabled:     getEnvBool("SWAGGER_ENABLED", false),
+		TLSEnabled:         tlsEnabled,
+		TLSCertFile:        tlsCertFile,
+		TLSKeyFile:         tlsKeyFile,
 	}
 
 	// Configure global slog

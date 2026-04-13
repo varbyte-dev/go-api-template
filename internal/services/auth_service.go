@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"time"
 
 	"go-api-template/internal/config"
@@ -147,7 +148,7 @@ func createAccessToken(user models.User) (string, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(config.App.AccessTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Subject:   string(rune(user.ID)),
+			Subject:   strconv.FormatUint(uint64(user.ID), 10),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
